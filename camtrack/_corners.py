@@ -1,3 +1,5 @@
+import yaml
+
 __all__ = [
     'FrameCorners',
     'filter_frame_corners',
@@ -218,7 +220,9 @@ def create_cli(build):
     @click.option('file_to_load', '--load-corners', type=click.File('rb'))
     @click.option('file_to_dump', '--dump-corners', type=click.File('wb'))
     @click.option('--show', is_flag=True)
-    def cli(frame_sequence, file_to_load, file_to_dump, show):
+    @click.option('config_file', '--config', type=click.File('r'),
+                  default='config.yaml')
+    def cli(frame_sequence, file_to_load, file_to_dump, show, config_file):
         """
         FRAME_SEQUENCE path to a video file or shell-like wildcard describing
         multiple images
@@ -227,7 +231,8 @@ def create_cli(build):
         if file_to_load is not None:
             corner_storage = load(file_to_load)
         else:
-            corner_storage = build(sequence)
+            config = yaml.load(config_file)
+            corner_storage = build(sequence, config)
         if file_to_dump is not None:
             dump(corner_storage, file_to_dump)
         if show:

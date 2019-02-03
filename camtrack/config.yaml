@@ -1,0 +1,9 @@
+st_params:
+  maxCorners: 500
+  qualityLevel: 0.01
+  minDistance: 10
+  blockSize: 25
+lk_params:
+  flags: 8  # cv.OPTFLOW_LK_GET_MIN_EIGENVALS
+  minEigThreshold: 0.01
+min_track_len: 5
