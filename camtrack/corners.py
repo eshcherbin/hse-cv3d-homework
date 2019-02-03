@@ -60,6 +60,7 @@ def _build_impl(frame_sequence: pims.FramesSequence,
         np.ones(len(points)) * block_size
     )
     # print(len(corners_))
+    n_tracks = len(points)
     builder.set_corners_at_frame(0, corners)
     for frame, image_1 in enumerate(frame_sequence[1:], 1):
         new_points, status = calc_corners_flow(image_0, image_1,
@@ -67,6 +68,34 @@ def _build_impl(frame_sequence: pims.FramesSequence,
         # print(len(corners_), len(status))
         corners = FrameCorners(corners.ids, new_points, corners.sizes)
         corners = filter_frame_corners(corners, np.squeeze(status == 1))
+
+        if st_params['maxCorners'] > len(corners.points):
+            maxCorners = st_params.pop('maxCorners')
+            mask = np.ones(image_1.shape, dtype=np.uint8)
+            for point in corners.points:
+                cv2.circle(mask, tuple(point),
+                           st_params['minDistance'], 0, thickness=cv2.FILLED)
+            new_points = \
+                cv2.goodFeaturesToTrack(image_1, **st_params,
+                                        maxCorners=
+                                        maxCorners - len(corners.points),
+                                        mask=mask,
+                                        useHarrisDetector=False)
+            # print(maxCorners - len(corners.points), len(new_points))
+            if new_points is not None:
+                new_ids = \
+                    np.arange(n_tracks,
+                              n_tracks + len(new_points)).reshape(-1, 1)
+                n_tracks += len(new_points)
+                new_sizes = np.ones_like(new_ids) * st_params['blockSize']
+                corners = FrameCorners(
+                    np.concatenate([corners.ids, new_ids], axis=0),
+                    np.concatenate([corners.points, new_points.reshape(-1, 2)],
+                                   axis=0),
+                    np.concatenate([corners.sizes, new_sizes], axis=0),
+                )
+            st_params['maxCorners'] = maxCorners
+
         builder.set_corners_at_frame(frame, corners)
         image_0 = image_1
 
