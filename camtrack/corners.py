@@ -45,56 +45,67 @@ def calc_corners_flow(image_0, image_1, corners_0, config):
     return corners_1, status
 
 
+def _get_new_points_global(image, st_global_params, cur_points):
+    if cur_points is not None:
+        mask = np.ones(image.shape, dtype=np.uint8)
+        for point in cur_points:
+            cv2.circle(mask,
+                       tuple(point),
+                       st_global_params['minDistance'],
+                       color=0,
+                       thickness=cv2.FILLED)
+    else:
+        mask = None
+    points = cv2.goodFeaturesToTrack(image,
+                                     **st_global_params,
+                                     mask=mask,
+                                     useHarrisDetector=False)
+    sizes = np.ones(len(points), dtype=np.int) * st_global_params['blockSize']
+
+    return points, sizes
+
+
+def get_new_points(image, config, cur_points=None):
+    return _get_new_points_global(image,
+                                  config['st_global_params'],
+                                  cur_points)
+
+
 def _build_impl(frame_sequence: pims.FramesSequence,
                 builder: _CornerStorageBuilder,
                 config: {}) -> None:
     image_0 = frame_sequence[0]
-    st_params = config['st_params']
-    block_size = st_params['blockSize']
-    points = cv2.goodFeaturesToTrack(image_0,
-                                     **st_params,
-                                     useHarrisDetector=False)
+    points, sizes = get_new_points(image_0, config)
     corners = FrameCorners(
         np.arange(len(points)),
         points,
-        np.ones(len(points)) * block_size
+        sizes
     )
-    # print(len(corners_))
     n_tracks = len(points)
     builder.set_corners_at_frame(0, corners)
+
     for frame, image_1 in enumerate(frame_sequence[1:], 1):
-        new_points, status = calc_corners_flow(image_0, image_1,
-                                               corners.points, config)
+        next_points, status = calc_corners_flow(image_0, image_1,
+                                                corners.points, config)
         # print(len(corners_), len(status))
-        corners = FrameCorners(corners.ids, new_points, corners.sizes)
+        corners = FrameCorners(corners.ids, next_points, corners.sizes)
         corners = filter_frame_corners(corners, np.squeeze(status == 1))
 
-        if st_params['maxCorners'] > len(corners.points):
-            maxCorners = st_params.pop('maxCorners')
-            mask = np.ones(image_1.shape, dtype=np.uint8)
-            for point in corners.points:
-                cv2.circle(mask, tuple(point),
-                           st_params['minDistance'], 0, thickness=cv2.FILLED)
-            new_points = \
-                cv2.goodFeaturesToTrack(image_1, **st_params,
-                                        maxCorners=
-                                        maxCorners - len(corners.points),
-                                        mask=mask,
-                                        useHarrisDetector=False)
-            # print(maxCorners - len(corners.points), len(new_points))
-            if new_points is not None:
-                new_ids = \
-                    np.arange(n_tracks,
-                              n_tracks + len(new_points)).reshape(-1, 1)
-                n_tracks += len(new_points)
-                new_sizes = np.ones_like(new_ids) * st_params['blockSize']
-                corners = FrameCorners(
-                    np.concatenate([corners.ids, new_ids], axis=0),
-                    np.concatenate([corners.points, new_points.reshape(-1, 2)],
-                                   axis=0),
-                    np.concatenate([corners.sizes, new_sizes], axis=0),
-                )
-            st_params['maxCorners'] = maxCorners
+        new_points, new_sizes = get_new_points(image_1, config, corners.points)
+        # print(maxCorners - len(corners.points), len(new_points))
+        if new_points is not None:
+            new_ids = \
+                np.arange(n_tracks,
+                          n_tracks + len(new_points))
+            n_tracks += len(new_points)
+            corners = FrameCorners(
+                np.concatenate([corners.ids, new_ids.reshape(-1, 1)],
+                               axis=0),
+                np.concatenate([corners.points, new_points.reshape(-1, 2)],
+                               axis=0),
+                np.concatenate([corners.sizes, new_sizes.reshape(-1, 1)],
+                               axis=0),
+            )
 
         builder.set_corners_at_frame(frame, corners)
         image_0 = image_1
