@@ -1,5 +1,11 @@
-blocks_n_rows: 5
-blocks_n_cols: 10
+blocks_n_rows: 2
+blocks_n_cols: 4
+
+st_blocks_params:
+  maxCorners: 50
+  qualityLevel: 0.001
+  minDistance: 15
+  blockSize: 25
 
 st_global_params:
   maxCorners: 1000
@@ -7,14 +13,8 @@ st_global_params:
   minDistance: 15
   blockSize: 35
 
-st_block_params:
-  maxCorners: 20
-  qualityLevel: 0.001
-  minDistance: 10
-  blockSize: 15
-
 lk_params:
   flags: 8  # cv.OPTFLOW_LK_GET_MIN_EIGENVALS
-  minEigThreshold: 0.01
+  minEigThreshold: 0.005
 
 min_track_len: 10
