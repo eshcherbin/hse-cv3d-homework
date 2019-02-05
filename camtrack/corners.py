@@ -193,11 +193,7 @@ def build(frame_sequence: pims.FramesSequence,
     else:
         builder = _CornerStorageBuilder()
         _build_impl(frame_sequence, builder, config)
-    if config['min_track_len']:
-        return without_short_tracks(builder.build_corner_storage(),
-                                    min_len=config['min_track_len'])
-    else:
-        return builder.build_corner_storage()
+    return builder.build_corner_storage()
 
 
 if __name__ == '__main__':

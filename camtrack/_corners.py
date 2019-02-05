@@ -222,7 +222,10 @@ def create_cli(build):
     @click.option('--show', is_flag=True)
     @click.option('config_file', '--config', type=click.File('r'),
                   default='config.yaml')
-    def cli(frame_sequence, file_to_load, file_to_dump, show, config_file):
+    @click.option('--min_track_len', '-l', type=click.IntRange(min=0),
+                  default=10)
+    def cli(frame_sequence, file_to_load, file_to_dump, show, config_file,
+            min_track_len):
         """
         FRAME_SEQUENCE path to a video file or shell-like wildcard describing
         multiple images
@@ -233,6 +236,8 @@ def create_cli(build):
         else:
             config = yaml.load(config_file)
             corner_storage = build(sequence, config)
+        corner_storage = without_short_tracks(corner_storage,
+                                              min_len=min_track_len)
         if file_to_dump is not None:
             dump(corner_storage, file_to_dump)
         if show:
