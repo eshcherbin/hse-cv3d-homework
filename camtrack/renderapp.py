@@ -5,7 +5,7 @@ __all__ = [
 ]
 
 from collections import namedtuple
-from recordclass import recordclass
+# from recordclass import recordclass
 
 import click
 import numpy as np
@@ -35,6 +35,83 @@ def _rescale_track(cam_track, scale):
     return rescaled_cam_track
 
 
+class CameraPoseAndParameters:
+
+    __slots__ = ('_yaw', '_pitch', '_pos', '_fov_y')
+
+    def __init__(self, yaw, pitch, pos, fov_y):
+        self._yaw = yaw
+        self._pitch = pitch
+        self._pos = pos
+        self._fov_y = fov_y
+
+    @property
+    def yaw(self):
+        return self._yaw
+
+    @yaw.setter
+    def yaw(self, value):
+        self._yaw = value
+
+    @property
+    def pitch(self):
+        return self._pitch
+
+    @pitch.setter
+    def pitch(self, value):
+        self._pitch = value
+
+    @property
+    def pos(self):
+        return self._pos
+
+    @pos.setter
+    def pos(self, value):
+        self._pos = value
+
+    @property
+    def fov_y(self):
+        return self._fov_y
+
+    @fov_y.setter
+    def fov_y(self, value):
+        self._fov_y = value
+
+
+class AnimationData:
+
+    __slots__ = ('_prev_time', '_key_states', '_last_xy')
+
+    def __init__(self, prev_time, key_states, last_xy):
+        self._prev_time = prev_time
+        self._key_states = key_states
+        self._last_xy = last_xy
+
+    @property
+    def prev_time(self):
+        return self._prev_time
+
+    @prev_time.setter
+    def prev_time(self, value):
+        self._prev_time = value
+
+    @property
+    def key_states(self):
+        return self._key_states
+
+    @key_states.setter
+    def key_states(self, value):
+        self._key_states = value
+
+    @property
+    def last_xy(self):
+        return self._last_xy
+
+    @last_xy.setter
+    def last_xy(self, value):
+        self._last_xy = value
+
+
 class CameraTrackRendererApp:
     _camera_fov_y_range = namedtuple('FovRange', 'min default max')(
         np.pi / 6, np.pi / 4, np.pi / 2
@@ -59,7 +136,7 @@ class CameraTrackRendererApp:
         self._tracked_cam_track_len = len(cam_track)
         self._tracked_cam_track_pos_float = 0.0
 
-        self._camera = recordclass('CameraPoseAndParameters', 'yaw pitch pos fov_y')(
+        self._camera = CameraPoseAndParameters(
             0.0, 0.0, np.array([0, 0, 10.0]), self._camera_fov_y_range.default
         )
 
@@ -67,7 +144,7 @@ class CameraTrackRendererApp:
         GLUT.glutInitWindowSize(600, 400)
         GLUT.glutInitWindowPosition(0, 0)
 
-        self._data = recordclass('AnimationData', 'prev_time key_states last_xy')(
+        self._data = AnimationData(
             GLUT.glutGet(GLUT.GLUT_ELAPSED_TIME), np.array([False] * 256), None
         )
 
