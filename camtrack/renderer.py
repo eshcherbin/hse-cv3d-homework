@@ -70,8 +70,8 @@ class CameraTrackRenderer:
         :param point_cloud: colored point cloud
         """
 
-        self._fov_y = tracked_cam_parameters.fov_y
-        self._ratio = tracked_cam_parameters.aspect_ratio
+        self._cam_fov_y = tracked_cam_parameters.fov_y
+        self._cam_ratio = tracked_cam_parameters.aspect_ratio
 
         self._points_pos_buffer_object = vbo.VBO(np.array(point_cloud.points, dtype=np.float32))
         self._points_color_buffer_object = vbo.VBO(np.array(point_cloud.colors, dtype=np.float32))
@@ -115,7 +115,8 @@ class CameraTrackRenderer:
 
         # mvp = np.eye(4)
 
-        mvp = self._build_proj(self._fov_y, self._ratio, 0.01, 100) \
+        cur_ratio = GLUT.glutGet(GLUT.GLUT_WINDOW_WIDTH) / GLUT.glutGet(GLUT.GLUT_WINDOW_HEIGHT)
+        mvp = self._build_proj(camera_fov_y, cur_ratio, 0.001, 50) \
             @ self._build_view(camera_tr_vec, camera_rot_mat) \
             @ _CL2GL
         # print(camera_tr_vec)
