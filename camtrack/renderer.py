@@ -72,9 +72,15 @@ class CameraTrackRenderer:
 
         self._cam_fov_y = tracked_cam_parameters.fov_y
         self._cam_ratio = tracked_cam_parameters.aspect_ratio
+        self._cam_track = tracked_cam_track
 
         self._points_pos_buffer_object = vbo.VBO(np.array(point_cloud.points, dtype=np.float32))
         self._points_color_buffer_object = vbo.VBO(np.array(point_cloud.colors, dtype=np.float32))
+
+        track_pos = [pose.t_vec for pose in tracked_cam_track]
+        self._track_pos_buffer_object = vbo.VBO(np.hstack([track_pos[:-1], track_pos[1:]]).astype(np.float32))
+        self._track_color_buffer_object = \
+            vbo.VBO(np.array([[0, 0, 1]] * (2 * len(tracked_cam_track) - 2)).astype(np.float32))
 
         self._color_program = _build_color_program()
 
@@ -113,8 +119,6 @@ class CameraTrackRenderer:
         # without interpolation
         tracked_cam_track_pos = int(tracked_cam_track_pos_float)
 
-        # mvp = np.eye(4)
-
         cur_ratio = GLUT.glutGet(GLUT.GLUT_WINDOW_WIDTH) / GLUT.glutGet(GLUT.GLUT_WINDOW_HEIGHT)
         mvp = self._build_proj(camera_fov_y, cur_ratio, 0.001, 50) \
             @ self._build_view(camera_tr_vec, camera_rot_mat) \
@@ -130,6 +134,7 @@ class CameraTrackRenderer:
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
 
         self._render_cloud(mvp)
+        self._render_track(mvp)
 
         GLUT.glutSwapBuffers()
 
@@ -152,6 +157,33 @@ class CameraTrackRenderer:
             GL.glVertexAttribPointer(loc, 3, GL.GL_FLOAT, False, 0, buffer)
 
         GL.glDrawArrays(GL.GL_POINTS, 0, self._points_pos_buffer_object.size // 3)
+
+        for attrib, buffer in buffers:
+            loc = GL.glGetAttribLocation(self._color_program, attrib)
+            GL.glDisableVertexAttribArray(loc)
+            buffer.unbind()
+
+        shaders.glUseProgram(0)
+
+    def _render_track(self, mvp):
+        shaders.glUseProgram(self._color_program)
+
+        GL.glUniformMatrix4fv(
+            GL.glGetUniformLocation(self._color_program, 'mvp'),
+            1, True, mvp)
+
+        buffers = [
+            ('position', self._track_pos_buffer_object),
+            ('color_in', self._track_color_buffer_object)
+        ]
+
+        for attrib, buffer in buffers:
+            buffer.bind()
+            loc = GL.glGetAttribLocation(self._color_program, attrib)
+            GL.glEnableVertexAttribArray(loc)
+            GL.glVertexAttribPointer(loc, 3, GL.GL_FLOAT, False, 0, buffer)
+
+        GL.glDrawArrays(GL.GL_LINES, 0, len(self._cam_track) - 1)
 
         for attrib, buffer in buffers:
             loc = GL.glGetAttribLocation(self._color_program, attrib)
