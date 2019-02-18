@@ -217,7 +217,7 @@ class CameraTrackRenderer:
         frustrum = (self._build_transform(cam_t_vec, cam_r_mat)
                     @ _CL2GL
                     @ np.linalg.inv(self._build_proj(self._cam_fov_y,
-                                                     self._cam_ratio, 2, 50))
+                                                     self._cam_ratio, 2, 25))
                     @ _CUBE.T).astype(np.float32)
         frustrum = (frustrum[:-1] / frustrum[-1]).T
         buffers = [
