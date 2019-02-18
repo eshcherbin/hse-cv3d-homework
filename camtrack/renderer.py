@@ -77,10 +77,12 @@ class CameraTrackRenderer:
         self._points_pos_buffer_object = vbo.VBO(np.array(point_cloud.points, dtype=np.float32))
         self._points_color_buffer_object = vbo.VBO(np.array(point_cloud.colors, dtype=np.float32))
 
-        track_pos = [pose.t_vec for pose in tracked_cam_track]
-        self._track_pos_buffer_object = vbo.VBO(np.hstack([track_pos[:-1], track_pos[1:]]).astype(np.float32))
+        self._track_pos_buffer_object = vbo.VBO(np.array([pose.t_vec for pose in tracked_cam_track], dtype=np.float32))
         self._track_color_buffer_object = \
-            vbo.VBO(np.array([[0, 0, 1]] * (2 * len(tracked_cam_track) - 2)).astype(np.float32))
+            vbo.VBO(np.array([[0, 0, 1]] * len(tracked_cam_track)).astype(np.float32))
+
+        self._cam_point_color_buffer_object = vbo.VBO(np.array([1, 0, 0], dtype=np.float32))
+        self._cam_frustrum_color_buffer_object = vbo.VBO(np.array([1, 1, 0], dtype=np.float32))
 
         self._color_program = _build_color_program()
 
@@ -135,59 +137,50 @@ class CameraTrackRenderer:
 
         self._render_cloud(mvp)
         self._render_track(mvp)
+        self._render_cam_point(mvp, self._cam_track[tracked_cam_track_pos].t_vec)
 
         GLUT.glutSwapBuffers()
 
-    def _render_cloud(self, mvp):
+    def _render_common(self, mvp, buffers, draw_mode, draw_cnt):
         shaders.glUseProgram(self._color_program)
 
         GL.glUniformMatrix4fv(
             GL.glGetUniformLocation(self._color_program, 'mvp'),
             1, True, mvp)
 
+        for attrib, buffer in buffers:
+            buffer.bind()
+            loc = GL.glGetAttribLocation(self._color_program, attrib)
+            GL.glEnableVertexAttribArray(loc)
+            GL.glVertexAttribPointer(loc, 3, GL.GL_FLOAT, False, 0, buffer)
+
+        GL.glDrawArrays(draw_mode, 0, draw_cnt)
+
+        for attrib, buffer in buffers:
+            loc = GL.glGetAttribLocation(self._color_program, attrib)
+            GL.glDisableVertexAttribArray(loc)
+            buffer.unbind()
+
+        shaders.glUseProgram(0)
+
+    def _render_cloud(self, mvp):
         buffers = [
             ('position', self._points_pos_buffer_object),
             ('color_in', self._points_color_buffer_object)
         ]
-
-        for attrib, buffer in buffers:
-            buffer.bind()
-            loc = GL.glGetAttribLocation(self._color_program, attrib)
-            GL.glEnableVertexAttribArray(loc)
-            GL.glVertexAttribPointer(loc, 3, GL.GL_FLOAT, False, 0, buffer)
-
-        GL.glDrawArrays(GL.GL_POINTS, 0, self._points_pos_buffer_object.size // 3)
-
-        for attrib, buffer in buffers:
-            loc = GL.glGetAttribLocation(self._color_program, attrib)
-            GL.glDisableVertexAttribArray(loc)
-            buffer.unbind()
-
-        shaders.glUseProgram(0)
+        self._render_common(mvp, buffers, GL.GL_POINTS,
+                            self._points_pos_buffer_object.size // 3)
 
     def _render_track(self, mvp):
-        shaders.glUseProgram(self._color_program)
-
-        GL.glUniformMatrix4fv(
-            GL.glGetUniformLocation(self._color_program, 'mvp'),
-            1, True, mvp)
-
         buffers = [
             ('position', self._track_pos_buffer_object),
             ('color_in', self._track_color_buffer_object)
         ]
+        self._render_common(mvp, buffers, GL.GL_LINE_STRIP, len(self._cam_track))
 
-        for attrib, buffer in buffers:
-            buffer.bind()
-            loc = GL.glGetAttribLocation(self._color_program, attrib)
-            GL.glEnableVertexAttribArray(loc)
-            GL.glVertexAttribPointer(loc, 3, GL.GL_FLOAT, False, 0, buffer)
-
-        GL.glDrawArrays(GL.GL_LINES, 0, len(self._cam_track) - 1)
-
-        for attrib, buffer in buffers:
-            loc = GL.glGetAttribLocation(self._color_program, attrib)
-            GL.glDisableVertexAttribArray(loc)
-            buffer.unbind()
-
-        shaders.glUseProgram(0)
+    def _render_cam_point(self, mvp, cam_t_vec):
+        buffers = [
+            ('position', vbo.VBO(np.array(cam_t_vec, dtype=np.float32))),
+            ('color_in', self._cam_point_color_buffer_object)
+        ]
+        self._render_common(mvp, buffers, GL.GL_POINTS, 1)
