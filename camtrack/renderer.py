@@ -76,6 +76,24 @@ def _build_color_program():
     )
 
 
+def _build_transform(tr, rot):
+    return np.block([[rot, tr.reshape(-1, 1)], [0, 0, 0, 1]]).astype(np.float32)
+
+
+def _build_view(tr, rot):
+    return np.linalg.inv(_build_transform(tr, rot))
+
+
+def _build_proj(fov_y, ratio, near, far):
+    fy = 1 / np.tan(fov_y / 2)
+    fx = fy / ratio
+    a = -(far + near) / (far - near)
+    b = -2 * far * near / (far - near)
+    return np.block([[np.diag([fx, fy]), np.zeros((2, 2))],
+                     [np.zeros((2, 2)), np.array([[a, b],
+                                                  [-1, 0]])]]).astype(np.float32)
+
+
 class CameraTrackRenderer:
 
     def __init__(self,
@@ -113,24 +131,6 @@ class CameraTrackRenderer:
         GLUT.glutInitDisplayMode(GLUT.GLUT_RGBA | GLUT.GLUT_DOUBLE | GLUT.GLUT_DEPTH)
         GL.glEnable(GL.GL_DEPTH_TEST)
 
-    @staticmethod
-    def _build_transform(tr, rot):
-        return np.block([[rot, tr.reshape(-1, 1)], [0, 0, 0, 1]]).astype(np.float32)
-
-    @staticmethod
-    def _build_view(tr, rot):
-        return np.linalg.inv(CameraTrackRenderer._build_transform(tr, rot))
-
-    @staticmethod
-    def _build_proj(fov_y, ratio, near, far):
-        fy = 1 / np.tan(fov_y / 2)
-        fx = fy / ratio
-        a = -(far + near) / (far - near)
-        b = -2 * far * near / (far - near)
-        return np.block([[np.diag([fx, fy]), np.zeros((2, 2))],
-                         [np.zeros((2, 2)), np.array([[a, b],
-                                                      [-1, 0]])]]).astype(np.float32)
-
     def display(self, camera_tr_vec, camera_rot_mat, camera_fov_y, tracked_cam_track_pos_float):
         """
         Draw everything with specified render camera position, projection parameters and 
@@ -150,8 +150,8 @@ class CameraTrackRenderer:
         tracked_cam_track_pos = int(tracked_cam_track_pos_float)
 
         cur_ratio = GLUT.glutGet(GLUT.GLUT_WINDOW_WIDTH) / GLUT.glutGet(GLUT.GLUT_WINDOW_HEIGHT)
-        vp = self._build_proj(camera_fov_y, cur_ratio, 0.001, 50) \
-            @ self._build_view(camera_tr_vec, camera_rot_mat) \
+        vp = _build_proj(camera_fov_y, cur_ratio, 0.001, 50) \
+            @ _build_view(camera_tr_vec, camera_rot_mat) \
             @ _CL2GL
 
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
@@ -163,9 +163,6 @@ class CameraTrackRenderer:
         self._render_cam_frustrum(vp,
                                   self._cam_track[tracked_cam_track_pos].t_vec,
                                   self._cam_track[tracked_cam_track_pos].r_mat)
-        #
-        # self._render_cam_point(vp, np.array([0, 0, 0]))
-        # self._render_cam_frustrum(vp, np.array([0, 0, 0]), np.eye(3))
 
         GLUT.glutSwapBuffers()
 
@@ -214,10 +211,10 @@ class CameraTrackRenderer:
         self._render_common(vp, buffers, GL.GL_POINTS, 1)
 
     def _render_cam_frustrum(self, vp, cam_t_vec, cam_r_mat):
-        frustrum = (self._build_transform(cam_t_vec, cam_r_mat)
+        frustrum = (_build_transform(cam_t_vec, cam_r_mat)
                     @ _CL2GL
-                    @ np.linalg.inv(self._build_proj(self._cam_fov_y,
-                                                     self._cam_ratio, 2, 25))
+                    @ np.linalg.inv(_build_proj(self._cam_fov_y,
+                                                self._cam_ratio, 2, 25))
                     @ _CUBE.T).astype(np.float32)
         frustrum = (frustrum[:-1] / frustrum[-1]).T
         buffers = [
