@@ -118,6 +118,10 @@ class CornerStorage(abc.ABC):
     def __iter__(self):
         pass
 
+    @abc.abstractmethod
+    def max_corner_id(self):
+        pass
+
 
 class StorageImpl(CornerStorage):
     """
@@ -130,6 +134,7 @@ class StorageImpl(CornerStorage):
         """
         super().__init__()
         self._corners = list(corners_for_each_frame)
+        self._max_id = max(c.ids.max() for c in self._corners)
 
     def __getitem__(self, frame: int) -> FrameCorners:
         return self._corners[frame]
@@ -139,6 +144,9 @@ class StorageImpl(CornerStorage):
 
     def __iter__(self):
         return iter(self._corners)
+
+    def max_corner_id(self):
+        return self._max_id
 
 
 class StorageFilter(CornerStorage):
@@ -165,6 +173,9 @@ class StorageFilter(CornerStorage):
     def __iter__(self):
         for frame in range(len(self)):  # pylint:disable=consider-using-enumerate
             yield self[frame]
+
+    def max_corner_id(self):
+        return self._storage.max_corner_id()
 
 
 def without_short_tracks(corner_storage: CornerStorage,
