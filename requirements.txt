@@ -7,7 +7,6 @@ opencv-python
 pims
 PyOpenGL
 pyyaml
-recordclass
 scikit-learn
 scipy
 sortednp
