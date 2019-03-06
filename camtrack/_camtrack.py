@@ -27,8 +27,10 @@ import numpy as np
 import pims
 from sklearn.preprocessing import normalize
 import sortednp as snp
+import yaml
 
 import frameseq
+from _corners import without_short_tracks
 from corners import CornerStorage, FrameCorners, build, load
 from data3d import CameraParameters, PointCloud, Pose
 from data3d import read_camera_parameters, write_point_cloud, write_poses
@@ -388,9 +390,13 @@ def create_cli(track_and_calc_colors):
     @click.option('file_to_load_corners', '--load-corners',
                   type=click.File('rb'))
     @click.option('--show', is_flag=True)
+    @click.option('corners_config_file', '--corners-config', type=click.File('r'),
+                  default='corners_config.yaml')
+    @click.option('--min_track_len', '-l', type=click.IntRange(min=0),
+                  default=10)
     def cli(frame_sequence, camera, track_destination,
             point_cloud_destination,
-            file_to_load_corners, show):
+            file_to_load_corners, show, corners_config_file, min_track_len):
         """
         FRAME_SEQUENCE path to a video file or shell-like wildcard describing
         multiple images\n
@@ -402,7 +408,10 @@ def create_cli(track_and_calc_colors):
         if file_to_load_corners is not None:
             corner_storage = load(file_to_load_corners)
         else:
+            config = yaml.load(corners_config_file)
             corner_storage = build(sequence)
+        corner_storage = without_short_tracks(corner_storage,
+                                              min_len=min_track_len)
 
         camera_parameters = read_camera_parameters(camera)
         poses, point_cloud = track_and_calc_colors(camera_parameters,
