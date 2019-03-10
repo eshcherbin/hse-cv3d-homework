@@ -15,7 +15,8 @@ __all__ = [
     'rodrigues_and_translation_to_view_mat3x4',
     'to_opencv_camera_mat3x3',
     'triangulate_correspondences',
-    'view_mat3x4_to_pose'
+    'view_mat3x4_to_pose',
+    'pose_to_view_mat3x4'
 ]
 
 from collections import namedtuple
@@ -275,7 +276,7 @@ class PointCloudBuilder:
         yield self.colors
 
     def add_points(self, ids: np.ndarray, points: np.ndarray) -> None:
-        self._ids = np.vstack((self.ids, ids.reshape(-1, 1)))
+        self._ids = np.vstack((self.ids, ids.reshape(-1, 1))).astype(np.int)
         self._points = np.vstack((self.points, points.reshape(-1, 3)))
         self._sort_data()
 
