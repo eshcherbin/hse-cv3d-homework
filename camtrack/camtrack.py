@@ -7,6 +7,7 @@ __all__ = [
 from typing import List, Tuple
 
 import numpy as np
+import sortednp as snp
 
 from corners import CornerStorage
 from data3d import CameraParameters, PointCloud, Pose
@@ -60,7 +61,7 @@ def _track_camera(corner_storage: CornerStorage,
                 and hom_ess_ratio <= _HOM_ESS_RATIO_THRESHOLD:
             init_points, init_points_ids = cur_points, cur_points_ids
             init_pose, init_frame = cur_pose, frame
-            # break
+            break
         elif best_stats < (cur_points_ids.size, hom_ess_ratio):
             best_stats = (cur_points_ids.size, hom_ess_ratio)
             init_points, init_points_ids = cur_points, cur_points_ids
@@ -69,9 +70,27 @@ def _track_camera(corner_storage: CornerStorage,
         print('Could not find a good initialization, '
               'using something kinda good instead')
     builder_res.add_points(init_points_ids, init_points)
-    for i in range(1, len(view_mats_res)):
-        view_mats_res[i] = eye3x4() if i < init_frame \
-            else pose_to_view_mat3x4(init_pose)
+
+    for frame in range(1, len(corner_storage)):
+        if frame == init_frame:
+            view_mats_res[frame] = pose_to_view_mat3x4(init_pose)
+            continue
+        # calculate pose for frame
+        _, (points2d_idx,
+            points3d_idx) = snp.intersect(corner_storage[frame].ids.flatten(),
+                                          builder_res.ids.flatten(),
+                                          indices=True)
+        if points2d_idx.size >= 6:
+            points2d = corner_storage[frame].points[points2d_idx]
+            points3d = builder_res.points[points3d_idx]
+            _, r_vec, t_vec, _ = cv2.solvePnPRansac(points3d, points2d, intrinsic_mat, None)
+            view_mat = rodrigues_and_translation_to_view_mat3x4(r_vec, t_vec)
+            view_mats_res[frame] = view_mat
+        else:
+            print('PROBLEMO RANSACO BRAGO BRAGO KUKURUZO')
+            view_mats_res[frame] = eye3x4()
+
+        # TODO: enrich the scene
 
     return view_mats_res, builder_res
 

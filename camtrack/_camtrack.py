@@ -351,7 +351,7 @@ def calc_point_cloud_colors(pc_builder: PointCloudBuilder,
     with click.progressbar(zip(rgb_sequence, view_mats, corner_storage),
                            label='Calculating colors',
                            length=len(view_mats)) as bar:
-        for image, view, corners in bar:
+        for i, (image, view, corners) in enumerate(bar):
             proj_mat = intrinsic_mat @ view
             points3d = point_cloud_points[corners.ids.flatten()]
             with np.errstate(invalid='ignore'):
