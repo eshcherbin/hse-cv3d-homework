@@ -61,7 +61,7 @@ def _track_camera(corner_storage: CornerStorage,
             print(f'{cur_points_ids.size} 3d points triangulated')
         if cur_points_ids.size >= _N_TRIANGULATED_POINTS_THRESHOLD \
                 and hom_ess_ratio <= _HOM_ESS_RATIO_THRESHOLD:
-            if init_points_ids is None or \
+            if not found_good or \
                     init_points_ids.size < cur_points_ids.size:
                 init_points, init_points_ids = cur_points, cur_points_ids
                 init_pose, init_frame = cur_pose, frame
@@ -129,7 +129,7 @@ def _track_camera(corner_storage: CornerStorage,
                 print(outliers)
 
             prev_outliers.update(ids2d[points2d_idx[outliers]])
-            print('AAA', prev_outliers)
+            # print('AAA', prev_outliers)
             # builder_res.remove_ids(outliers)
         else:
             print('PROBLEMO RANSACO BRAGO BRAGO KUKURUZO')
@@ -138,7 +138,7 @@ def _track_camera(corner_storage: CornerStorage,
         for second_frame in range(frame):
             corrs = build_correspondences(corner_storage[second_frame],
                                           corner_storage[frame],
-                                          builder_res.ids)
+                                          snp.merge(builder_res.ids.flatten(), np.fromiter(sorted(prev_outliers), dtype=np.int)))
             if corrs.ids.size:
                 new_points, new_ids = triangulate_correspondences(
                     corrs,
