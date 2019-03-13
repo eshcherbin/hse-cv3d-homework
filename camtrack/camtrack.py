@@ -18,25 +18,19 @@ import cv2
 
 
 # TODO: calibrate everything
-_HOM_ESS_RATIO_THRESHOLD = 0.5
-_TRIANGULATION_PARAMETERS = TriangulationParameters(10, 5, 0)
-_N_TRIANGULATED_POINTS_THRESHOLD = 50
-_STRICT_TRIANGULATION_PARAMETERS = TriangulationParameters(5, 5, 0)
+_INIT_HOM_ESS_RATIO_THRESHOLD = 0.5
+_HOM_ESS_RATIO_THRESHOLD_STEP = 0.1
+_N_TRIANGULATED_POINTS_THRESHOLD = 30
 
 _DEBUG = True
 
 
-def _track_camera(corner_storage: CornerStorage,
-                  intrinsic_mat: np.ndarray) \
-        -> Tuple[List[np.ndarray], PointCloudBuilder]:
-    view_mats_res = [eye3x4()] + [None] * (len(corner_storage) - 1)
-    builder_res = PointCloudBuilder()
-
-    # initialization
-    best_stats = (-1, -2)
+def _try_hom_ess_ratio(hom_ess_ratio_threshold, corner_storage,
+                       intrinsic_mat, triangulation_parameters):
+    if _DEBUG:
+        print(f'trying hom_ess_ratio_threshold: {hom_ess_ratio_threshold}')
     init_points, init_points_ids = None, None
     init_pose, init_frame = None, None
-    found_good = False
     for frame in range(1, len(corner_storage)):
         corrs = build_correspondences(corner_storage[0], corner_storage[frame])
         E, mask_E = cv2.findEssentialMat(corrs.points_1, corrs.points_2,
@@ -44,39 +38,68 @@ def _track_camera(corner_storage: CornerStorage,
         _, mask_H = cv2.findHomography(corrs.points_1, corrs.points_2,
                                        method=cv2.RANSAC)
         hom_ess_ratio = mask_H.mean() / mask_E.mean()
+
         R1, R2, t = cv2.decomposeEssentialMat(E)
         poses = [Pose(r_mat, t_vec) for r_mat, t_vec in ((R1, t), (R1, -t),
                                                          (R2, t), (R2, -t))]
+        outliers = corrs.ids[mask_E.flatten() == 0]
+        corrs = build_correspondences(corner_storage[0], corner_storage[frame],
+                                      outliers)
+
         triang_res = [(triangulate_correspondences(corrs,
                                                    eye3x4(),
                                                    pose_to_view_mat3x4(pose),
                                                    intrinsic_mat,
-                                                   _TRIANGULATION_PARAMETERS),
+                                                   triangulation_parameters),
                        pose)
                       for pose in poses]
         (cur_points, cur_points_ids), cur_pose = \
             max(triang_res, key=lambda tp: tp[0][1].size)
+
         if _DEBUG and cur_points_ids.size:
-            print(f'frame {frame}, E: {mask_E.mean():.3f}, H: {mask_H.mean():.3f}, H/E: {mask_H.mean() / mask_E.mean():.3f}, n_corrs: {len(corrs.ids)}')
+            print(f'frame {frame}, E: {mask_E.mean():.3f}, H: {mask_H.mean():.3f}, H/E: {hom_ess_ratio:.3f}, n_corrs: {len(corrs.ids)}')
             print(f'{cur_points_ids.size} 3d points triangulated')
+
         if cur_points_ids.size >= _N_TRIANGULATED_POINTS_THRESHOLD \
-                and hom_ess_ratio <= _HOM_ESS_RATIO_THRESHOLD:
-            if not found_good or \
+                and hom_ess_ratio <= hom_ess_ratio_threshold:
+            if init_frame is None or \
                     init_points_ids.size < cur_points_ids.size:
                 init_points, init_points_ids = cur_points, cur_points_ids
                 init_pose, init_frame = cur_pose, frame
-                print([tp[0][1].size for tp in triang_res], init_pose)
-                print([tp[1] for tp in triang_res])
-                found_good = True
-        elif best_stats < (cur_points_ids.size, hom_ess_ratio):
-            best_stats = (cur_points_ids.size, hom_ess_ratio)
-            init_points, init_points_ids = cur_points, cur_points_ids
-            init_pose, init_frame = cur_pose, frame
-    if not found_good:
-        print('Could not find a good initialization, '
-              'using something kinda good instead')
+                if _DEBUG:
+                    print([tp[0][1].size for tp in triang_res], init_pose)
+                    print([tp[1] for tp in triang_res])
+
+    return (init_points, init_points_ids, init_pose, init_frame) \
+        if init_frame is not None else None
+
+
+def _camera_tracking_initialization(corner_storage, intrinsic_mat,
+                                    triangulation_parameters):
+    hom_ess_ratio_threshold = _INIT_HOM_ESS_RATIO_THRESHOLD
+    while True:
+        result = _try_hom_ess_ratio(hom_ess_ratio_threshold, corner_storage,
+                                    intrinsic_mat, triangulation_parameters)
+        if result is not None:
+            return result
+        hom_ess_ratio_threshold += _HOM_ESS_RATIO_THRESHOLD_STEP
+
+
+def _track_camera(corner_storage: CornerStorage,
+                  intrinsic_mat: np.ndarray,
+                  frame_shape) \
+        -> Tuple[List[np.ndarray], PointCloudBuilder]:
+    triangulation_parameters = \
+        TriangulationParameters(max(5, min(frame_shape[:2]) / 100), 5, 0)
+    if _DEBUG:
+        print(triangulation_parameters)
+    view_mats_res = [eye3x4() for _ in range(len(corner_storage))]
+    builder_res = PointCloudBuilder()
+
+    # initialization
+    init_points, init_points_ids, init_pose, init_frame = \
+        _camera_tracking_initialization(corner_storage, intrinsic_mat, triangulation_parameters)
     builder_res.add_points(init_points_ids, init_points)
-    print(init_pose)
 
     prev_outliers = set()
     prev_r_vec, prev_t_vec = np.zeros((3, 1)), np.zeros((3, 1))
@@ -117,7 +140,7 @@ def _track_camera(corner_storage: CornerStorage,
             retval, r_vec, t_vec, inliers = cv2.solvePnPRansac(points3d, points2d, intrinsic_mat, None,
                                                                rvec=prev_r_vec, tvec=prev_t_vec,
                                                                useExtrinsicGuess=True,
-                                                               reprojectionError=_TRIANGULATION_PARAMETERS.max_reprojection_error)
+                                                               reprojectionError=triangulation_parameters.max_reprojection_error)
             if not retval:
                 print('BOGDAN POMOGI!!!!!!')
             view_mat = rodrigues_and_translation_to_view_mat3x4(r_vec, t_vec)
@@ -126,7 +149,6 @@ def _track_camera(corner_storage: CornerStorage,
                                  inliers.astype(np.int))
             if _DEBUG:
                 print(f'tracking frame {frame}, n_builder: {builder_res.ids.size}, n_cur_corrs: {points2d_idx.size}, inliers_ratio: {inliers.size / points2d_idx.size}')
-                print(outliers)
 
             prev_outliers.update(ids2d[points2d_idx[outliers]])
             # print('AAA', prev_outliers)
@@ -138,14 +160,14 @@ def _track_camera(corner_storage: CornerStorage,
         for second_frame in range(frame):
             corrs = build_correspondences(corner_storage[second_frame],
                                           corner_storage[frame],
-                                          snp.merge(builder_res.ids.flatten(), np.fromiter(sorted(prev_outliers), dtype=np.int)))
+                                          builder_res.ids.flatten())
             if corrs.ids.size:
                 new_points, new_ids = triangulate_correspondences(
                     corrs,
                     view_mats_res[second_frame],
                     view_mats_res[frame],
                     intrinsic_mat,
-                    _STRICT_TRIANGULATION_PARAMETERS
+                    triangulation_parameters
                 )
                 builder_res.add_points(new_ids, new_points)
 
@@ -172,7 +194,8 @@ def track_and_calc_colors(camera_parameters: CameraParameters,
     )
     view_mats, point_cloud_builder = _track_camera(
         corner_storage,
-        intrinsic_mat
+        intrinsic_mat,
+        rgb_sequence[0].shape
     )
     calc_point_cloud_colors(
         point_cloud_builder,
