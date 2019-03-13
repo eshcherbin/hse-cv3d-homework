@@ -19,8 +19,9 @@ import cv2
 
 # TODO: calibrate everything
 _HOM_ESS_RATIO_THRESHOLD = 0.5
-_TRIANGULATION_PARAMETERS = TriangulationParameters(5, 5, 0.5)
+_TRIANGULATION_PARAMETERS = TriangulationParameters(5, 5, 0)
 _N_TRIANGULATED_POINTS_THRESHOLD = 50
+_STRICT_TRIANGULATION_PARAMETERS = TriangulationParameters(5, 5, 0)
 
 _DEBUG = True
 
@@ -35,6 +36,7 @@ def _track_camera(corner_storage: CornerStorage,
     best_stats = (-1, -2)
     init_points, init_points_ids = None, None
     init_pose, init_frame = None, None
+    found_good = False
     for frame in range(1, len(corner_storage)):
         corrs = build_correspondences(corner_storage[0], corner_storage[frame])
         E, mask_E = cv2.findEssentialMat(corrs.points_1, corrs.points_2,
@@ -59,38 +61,83 @@ def _track_camera(corner_storage: CornerStorage,
             print(f'{cur_points_ids.size} 3d points triangulated')
         if cur_points_ids.size >= _N_TRIANGULATED_POINTS_THRESHOLD \
                 and hom_ess_ratio <= _HOM_ESS_RATIO_THRESHOLD:
-            init_points, init_points_ids = cur_points, cur_points_ids
-            init_pose, init_frame = cur_pose, frame
-            break
+            if init_points_ids is None or \
+                    init_points_ids.size < cur_points_ids.size:
+                init_points, init_points_ids = cur_points, cur_points_ids
+                init_pose, init_frame = cur_pose, frame
+                print([tp[0][1].size for tp in triang_res], init_pose)
+                print([tp[1] for tp in triang_res])
+                found_good = True
         elif best_stats < (cur_points_ids.size, hom_ess_ratio):
             best_stats = (cur_points_ids.size, hom_ess_ratio)
             init_points, init_points_ids = cur_points, cur_points_ids
             init_pose, init_frame = cur_pose, frame
-    else:
+    if not found_good:
         print('Could not find a good initialization, '
               'using something kinda good instead')
     builder_res.add_points(init_points_ids, init_points)
+    print(init_pose)
 
+    prev_outliers = set()
     for frame in range(1, len(corner_storage)):
         if frame == init_frame:
             view_mats_res[frame] = pose_to_view_mat3x4(init_pose)
             continue
         # calculate pose for frame
+        # cur_corners_ids = np.delete(corner_storage[frame].ids.flatten(),
+        #                             list(prev_outliers),
+        #                             axis=0)
+        # print(cur_corners_ids.size,
+        #       corner_storage[frame].ids.size,
+        #       prev_outliers,
+        #       cur_corners_ids
+        #       )
+        ids2d = corner_storage[frame].ids.flatten()
         _, (points2d_idx,
-            points3d_idx) = snp.intersect(corner_storage[frame].ids.flatten(),
+            points3d_idx) = snp.intersect(ids2d,
                                           builder_res.ids.flatten(),
                                           indices=True)
+        to_remove_from_ids = np.searchsorted(ids2d, list(prev_outliers))
+        to_remove_from_idx = np.searchsorted(points2d_idx, to_remove_from_ids)
+        points2d_idx = np.delete(points2d_idx, to_remove_from_idx, 0)
+        points3d_idx = np.delete(points3d_idx, to_remove_from_idx, 0)
+        points2d = corner_storage[frame].points[points2d_idx]
+        points3d = builder_res.points[points3d_idx]
         if points2d_idx.size >= 6:
-            points2d = corner_storage[frame].points[points2d_idx]
-            points3d = builder_res.points[points3d_idx]
-            _, r_vec, t_vec, _ = cv2.solvePnPRansac(points3d, points2d, intrinsic_mat, None)
+            # print(points2d_idx, points3d_idx)
+            # if frame == 2:
+            #     break
+            retval, r_vec, t_vec, inliers = cv2.solvePnPRansac(points3d, points2d, intrinsic_mat, None,
+                                                               reprojectionError=_TRIANGULATION_PARAMETERS.max_reprojection_error)
+            if not retval:
+                print('BOGDAN POMOGI!!!!!!')
             view_mat = rodrigues_and_translation_to_view_mat3x4(r_vec, t_vec)
             view_mats_res[frame] = view_mat
+            if _DEBUG:
+                print(f'tracking frame {frame}, n_builder: {builder_res.ids.size}, n_cur_corrs: {points2d_idx.size}, inliers_ratio: {inliers.size / points2d_idx.size}')
+
+            outliers = np.delete(np.arange(points2d_idx.size, dtype=np.int),
+                                 inliers.astype(np.int))
+            # print('AAA', prev_outliers)
+            prev_outliers.update(outliers)
+            # builder_res.remove_ids(outliers)
         else:
             print('PROBLEMO RANSACO BRAGO BRAGO KUKURUZO')
             view_mats_res[frame] = eye3x4()
 
-        # TODO: enrich the scene
+        for second_frame in range(frame):
+            corrs = build_correspondences(corner_storage[second_frame],
+                                          corner_storage[frame],
+                                          builder_res.ids)
+            if corrs.ids.size:
+                new_points, new_ids = triangulate_correspondences(
+                    corrs,
+                    view_mats_res[second_frame],
+                    view_mats_res[frame],
+                    intrinsic_mat,
+                    _STRICT_TRIANGULATION_PARAMETERS
+                )
+                builder_res.add_points(new_ids, new_points)
 
     return view_mats_res, builder_res
 

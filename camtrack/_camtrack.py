@@ -253,7 +253,7 @@ class PointCloudBuilder:
     def __init__(self, ids: np.ndarray = None, points: np.ndarray = None,
                  colors: np.ndarray = None) -> None:
         super().__init__()
-        self._ids = ids if ids is not None else np.array([])
+        self._ids = ids if ids is not None else np.array([], dtype=np.int)
         self._points = points if points is not None else np.array([])
         self._colors = colors
         self._sort_data()
@@ -276,13 +276,23 @@ class PointCloudBuilder:
         yield self.colors
 
     def add_points(self, ids: np.ndarray, points: np.ndarray) -> None:
-        self._ids = np.vstack((self.ids, ids.reshape(-1, 1))).astype(np.int)
-        self._points = np.vstack((self.points, points.reshape(-1, 3)))
+        ids = ids.reshape(-1, 1)
+        points = points.reshape(-1, 3)
+        _, (idx_1, idx_2) = snp.intersect(self.ids.flatten(), ids.flatten(),
+                                          indices=True)
+        self.points[idx_1] = points[idx_2]
+        self._ids = np.vstack((self.ids, np.delete(ids, idx_2, axis=0)))
+        self._points = np.vstack((self.points, np.delete(points, idx_2, axis=0)))
         self._sort_data()
 
     def set_colors(self, colors: np.ndarray) -> None:
         assert self._ids.size == colors.shape[0]
         self._colors = colors
+
+    def update_points(self, ids: np.ndarray, points: np.ndarray) -> None:
+        _, (idx_1, idx_2) = snp.intersect(self.ids.flatten(), ids.flatten(),
+                                          indices=True)
+        self._points[idx_1] = points[idx_2]
 
     def build_point_cloud(self) -> PointCloud:
         return PointCloud(self.ids, self.points, self.colors)
@@ -351,7 +361,7 @@ def calc_point_cloud_colors(pc_builder: PointCloudBuilder,
     with click.progressbar(zip(rgb_sequence, view_mats, corner_storage),
                            label='Calculating colors',
                            length=len(view_mats)) as bar:
-        for i, (image, view, corners) in enumerate(bar):
+        for image, view, corners in bar:
             proj_mat = intrinsic_mat @ view
             points3d = point_cloud_points[corners.ids.flatten()]
             with np.errstate(invalid='ignore'):
@@ -410,7 +420,7 @@ def create_cli(track_and_calc_colors):
             corner_storage = load(file_to_load_corners)
         else:
             config = yaml.load(corners_config_file)
-            corner_storage = build(sequence)
+            corner_storage = build(sequence, config)
         corner_storage = without_short_tracks(corner_storage,
                                               min_len=min_track_len)
 
