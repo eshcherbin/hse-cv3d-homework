@@ -19,7 +19,7 @@ import cv2
 
 # TODO: calibrate everything
 _HOM_ESS_RATIO_THRESHOLD = 0.5
-_TRIANGULATION_PARAMETERS = TriangulationParameters(5, 5, 0)
+_TRIANGULATION_PARAMETERS = TriangulationParameters(10, 5, 0)
 _N_TRIANGULATED_POINTS_THRESHOLD = 50
 _STRICT_TRIANGULATION_PARAMETERS = TriangulationParameters(5, 5, 0)
 
@@ -79,7 +79,14 @@ def _track_camera(corner_storage: CornerStorage,
     print(init_pose)
 
     prev_outliers = set()
+    prev_r_vec, prev_t_vec = np.zeros((3, 1)), np.zeros((3, 1))
     for frame in range(1, len(corner_storage)):
+        # if frame >= init_frame:
+        #     view_mats_res[frame] = pose_to_view_mat3x4(init_pose)
+        # else:
+        #     view_mats_res[frame] = eye3x4()
+        # continue
+        # if frame >= init_frame:
         if frame == init_frame:
             view_mats_res[frame] = pose_to_view_mat3x4(init_pose)
             continue
@@ -108,23 +115,26 @@ def _track_camera(corner_storage: CornerStorage,
             # if frame == 2:
             #     break
             retval, r_vec, t_vec, inliers = cv2.solvePnPRansac(points3d, points2d, intrinsic_mat, None,
+                                                               rvec=prev_r_vec, tvec=prev_t_vec,
+                                                               useExtrinsicGuess=True,
                                                                reprojectionError=_TRIANGULATION_PARAMETERS.max_reprojection_error)
             if not retval:
                 print('BOGDAN POMOGI!!!!!!')
             view_mat = rodrigues_and_translation_to_view_mat3x4(r_vec, t_vec)
             view_mats_res[frame] = view_mat
-            if _DEBUG:
-                print(f'tracking frame {frame}, n_builder: {builder_res.ids.size}, n_cur_corrs: {points2d_idx.size}, inliers_ratio: {inliers.size / points2d_idx.size}')
-
             outliers = np.delete(np.arange(points2d_idx.size, dtype=np.int),
                                  inliers.astype(np.int))
-            # print('AAA', prev_outliers)
-            prev_outliers.update(outliers)
+            if _DEBUG:
+                print(f'tracking frame {frame}, n_builder: {builder_res.ids.size}, n_cur_corrs: {points2d_idx.size}, inliers_ratio: {inliers.size / points2d_idx.size}')
+                print(outliers)
+
+            prev_outliers.update(ids2d[points2d_idx[outliers]])
+            print('AAA', prev_outliers)
             # builder_res.remove_ids(outliers)
         else:
             print('PROBLEMO RANSACO BRAGO BRAGO KUKURUZO')
             view_mats_res[frame] = eye3x4()
-
+        #
         for second_frame in range(frame):
             corrs = build_correspondences(corner_storage[second_frame],
                                           corner_storage[frame],
@@ -138,6 +148,15 @@ def _track_camera(corner_storage: CornerStorage,
                     _STRICT_TRIANGULATION_PARAMETERS
                 )
                 builder_res.add_points(new_ids, new_points)
+
+    if _DEBUG:
+        for frame in range(len(corner_storage)):
+            _, (point_cloud_idx, corners_idx) = snp.intersect(
+                builder_res.ids.flatten(),
+                corner_storage[frame].ids.flatten(),
+                indices=True
+            )
+            print(f'on frame {frame} there will be {point_cloud_idx.size} projected points')
 
     return view_mats_res, builder_res
 
