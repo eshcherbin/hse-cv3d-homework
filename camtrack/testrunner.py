@@ -10,7 +10,7 @@ import numpy as np
 from voluptuous import Any, Schema, Required
 import yaml
 
-from _camtrack import without_short_tracks
+from _corners import without_short_tracks
 import camtrack
 import cmptrack as cmp
 import corners

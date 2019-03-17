@@ -101,17 +101,17 @@ def _to_camera_center(view_mat):
     return view_mat[:, :3].T @ -view_mat[:, 3]
 
 
-def _calc_triangulation_angle_mask(view_mat_1: np.ndarray,
+def _calc_triangulation_angle_coss(view_mat_1: np.ndarray,
                                    view_mat_2: np.ndarray,
-                                   points3d: np.ndarray,
-                                   min_angle_deg: float) -> np.ndarray:
+                                   points3d: np.ndarray) -> np.ndarray:
     camera_center_1 = _to_camera_center(view_mat_1)
     camera_center_2 = _to_camera_center(view_mat_2)
     vecs_1 = normalize(camera_center_1 - points3d)
     vecs_2 = normalize(camera_center_2 - points3d)
     coss = np.einsum('ij,ij->i', vecs_1, vecs_2)
-    angles_mask = coss <= np.cos(np.deg2rad(min_angle_deg))
-    return angles_mask
+    return coss
+    # angles_mask = coss <= np.cos(np.deg2rad(min_angle_deg))
+    # return angles_mask
 
 
 Correspondences = namedtuple(
@@ -180,7 +180,7 @@ def triangulate_correspondences(correspondences: Correspondences,
                                 view_mat_1: np.ndarray, view_mat_2: np.ndarray,
                                 intrinsic_mat: np.ndarray,
                                 parameters: TriangulationParameters) \
-        -> Tuple[np.ndarray, np.ndarray]:
+        -> Tuple[np.ndarray, np.ndarray, np.float]:
     points2d_1 = correspondences.points_1
     points2d_2 = correspondences.points_2
 
@@ -211,15 +211,20 @@ def triangulate_correspondences(correspondences: Correspondences,
     )
     z_mask_1 = _calc_z_mask(points3d, view_mat_1, parameters.min_depth)
     z_mask_2 = _calc_z_mask(points3d, view_mat_2, parameters.min_depth)
-    angle_mask = _calc_triangulation_angle_mask(
+
+    coss = _calc_triangulation_angle_coss(
         view_mat_1,
         view_mat_2,
         points3d,
-        parameters.min_triangulation_angle_deg
     )
-    common_mask = reprojection_error_mask & z_mask_1 & z_mask_2 & angle_mask
+    cos_threshold = \
+        np.cos(np.deg2rad(parameters.min_triangulation_angle_deg)) \
+        if parameters.min_triangulation_angle_deg is not None \
+        else np.median(coss)
+    angle_mask = coss <= cos_threshold
 
-    return points3d[common_mask], correspondences.ids[common_mask]
+    all_mask = reprojection_error_mask & z_mask_1 & z_mask_2 & angle_mask
+    return points3d[all_mask], correspondences.ids[all_mask], cos_threshold
 
 
 def check_inliers_mask(inliers_mask: np.ndarray,
@@ -282,7 +287,8 @@ class PointCloudBuilder:
                                           indices=True)
         self.points[idx_1] = points[idx_2]
         self._ids = np.vstack((self.ids, np.delete(ids, idx_2, axis=0)))
-        self._points = np.vstack((self.points, np.delete(points, idx_2, axis=0)))
+        self._points = np.vstack((self.points, np.delete(points, idx_2,
+                                                         axis=0)))
         self._sort_data()
 
     def set_colors(self, colors: np.ndarray) -> None:
@@ -401,8 +407,8 @@ def create_cli(track_and_calc_colors):
     @click.option('file_to_load_corners', '--load-corners',
                   type=click.File('rb'))
     @click.option('--show', is_flag=True)
-    @click.option('corners_config_file', '--corners-config', type=click.File('r'),
-                  default='corners_config.yaml')
+    @click.option('corners_config_file', '--corners-config',
+                  type=click.File('r'), default='corners_config.yaml')
     @click.option('--min_track_len', '-l', type=click.IntRange(min=0),
                   default=10)
     def cli(frame_sequence, camera, track_destination,
