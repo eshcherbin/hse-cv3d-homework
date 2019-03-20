@@ -20,6 +20,7 @@ import cv2
 # TODO: calibrate everything
 _INIT_STRICT_PARAMS = (0.5, 700, 1)
 _INIT_LOOSE_PARAMS = (0.7, 300, 3)
+# _DIST_RETRIANG_THRESHOLD = 1
 
 _DEBUG = False
 
@@ -182,6 +183,15 @@ def _track_camera(corner_storage: CornerStorage,
                     intrinsic_mat,
                     triangulation_parameters_enrich
                 )
+                # _, (not_new_idx, old_idx) = snp.intersect(new_ids.flatten(),
+                #                                           builder_res.ids.flatten(),
+                #                                           indices=True)
+                # outliers_idx = old_idx[np.sum((new_points[not_new_idx] -
+                #                                builder_res.points[old_idx])**2,
+                #                               axis=1) > _DIST_RETRIANG_THRESHOLD]
+                # prev_outliers.update(builder_res.ids[outliers_idx].flatten())
+                # new_points = np.delete(new_points, not_new_idx, axis=0)
+                # new_ids = np.delete(new_ids, not_new_idx, axis=0)
                 if _DEBUG and new_ids.size:
                     print(f'adding {new_ids.size} points between frames '
                           f'{second_frame} and {frame}, cos_thres: {cos_thres}')
