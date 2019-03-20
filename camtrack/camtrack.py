@@ -48,8 +48,8 @@ def _try_init(init_params, corner_storage,
         hom_ess_ratio = mask_H.mean()
 
         R1, R2, t = cv2.decomposeEssentialMat(E)
-        poses = [Pose(r_mat, t_vec) for r_mat, t_vec in ((R1, t), (R1, -t),
-                                                         (R2, t), (R2, -t))]
+        poses = [Pose(r_mat, t_vec) for r_mat, t_vec in ((R1.T, R1.T @ t), (R1.T, R1.T @ -t),
+                                                         (R2.T, R2.T @ t), (R2.T, R2.T @ -t))]
         triang_res = [(triangulate_correspondences(corrs,
                                                    eye3x4(),
                                                    pose_to_view_mat3x4(pose),
