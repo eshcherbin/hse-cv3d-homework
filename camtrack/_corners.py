@@ -118,6 +118,10 @@ class CornerStorage(abc.ABC):
     def __iter__(self):
         pass
 
+    @abc.abstractmethod
+    def max_corner_id(self):
+        pass
+
 
 class StorageImpl(CornerStorage):
     """
@@ -130,6 +134,7 @@ class StorageImpl(CornerStorage):
         """
         super().__init__()
         self._corners = list(corners_for_each_frame)
+        self._max_id = max(c.ids.max() for c in self._corners)
 
     def __getitem__(self, frame: int) -> FrameCorners:
         return self._corners[frame]
@@ -139,6 +144,9 @@ class StorageImpl(CornerStorage):
 
     def __iter__(self):
         return iter(self._corners)
+
+    def max_corner_id(self):
+        return self._max_id
 
 
 class StorageFilter(CornerStorage):
@@ -165,6 +173,9 @@ class StorageFilter(CornerStorage):
     def __iter__(self):
         for frame in range(len(self)):  # pylint:disable=consider-using-enumerate
             yield self[frame]
+
+    def max_corner_id(self):
+        return self._storage.max_corner_id()
 
 
 def without_short_tracks(corner_storage: CornerStorage,
@@ -220,11 +231,11 @@ def create_cli(build):
     @click.option('file_to_load', '--load-corners', type=click.File('rb'))
     @click.option('file_to_dump', '--dump-corners', type=click.File('wb'))
     @click.option('--show', is_flag=True)
-    @click.option('config_file', '--config', type=click.File('r'),
-                  default='config.yaml')
+    @click.option('corners_config_file', '--corners-config', type=click.File('r'),
+                  default='corners_config.yaml')
     @click.option('--min_track_len', '-l', type=click.IntRange(min=0),
                   default=10)
-    def cli(frame_sequence, file_to_load, file_to_dump, show, config_file,
+    def cli(frame_sequence, file_to_load, file_to_dump, show, corners_config_file,
             min_track_len):
         """
         FRAME_SEQUENCE path to a video file or shell-like wildcard describing
@@ -234,7 +245,7 @@ def create_cli(build):
         if file_to_load is not None:
             corner_storage = load(file_to_load)
         else:
-            config = yaml.load(config_file)
+            config = yaml.load(corners_config_file)
             corner_storage = build(sequence, config)
         corner_storage = without_short_tracks(corner_storage,
                                               min_len=min_track_len)
